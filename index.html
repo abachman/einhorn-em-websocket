@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <script src="reconnecting-websocket.min.js"></script>
+  <style>
+    button { font-size: 24px; }
+    .ping-debug { border: 1px solid black; padding: 8px; margin: 8px; }
+  </style>
+</head>
+
+<body>
+<div style='width: 800px; margin: 0 auto;'>
+  <button onclick='start(); return false;'>Start</button>
+  <button onclick='stop(); return false;'>Stop</button>
+  <div id='pings'></div>
+</div>
+
+<script>
+
+// lines of log output on screen at one time
+var MAX_DEBUG = 5,
+    // number of parallel clients to start
+    CLIENT_COUNT = 2;
+
+var WS = function (id) {
+  this.id = "client-web-" + id;
+  this.ping_count = 0;
+
+  this.el = document.createElement('div');
+  this.el.className = 'ping-debug';
+
+  this.dbg = document.createElement('pre');
+
+  var lbl = document.createElement('strong');
+  lbl.innerText = "Client " + id;
+
+  this.el.appendChild(lbl);
+  this.el.appendChild(this.dbg);
+
+  var pings = document.getElementById('pings');
+  pings.appendChild(this.el);
+
+  this.messages = [];
+}
+
+WS.prototype.start = function () {
+  this.log("connecting to websocket server on port 2345");
+  this.sock = new ReconnectingWebSocket("ws://localhost:2345", null, {debug: false});
+  this.bind_all();
+}
+
+WS.prototype.bind_all = function () {
+  var self = this;
+
+  this.sock.onopen = function (evt) {
+    self.log("client connected");
+    self.send(JSON.stringify({type: 'status', client_id: self.id}));
+  }
+
+  this.sock.onmessage = function (evt) {
+    self.log("got message: " + evt.data);
+  }
+
+  this.sock.onclose = function (evt) {
+    self.log("client DISCONNECTED");
+  }
+}
+
+WS.prototype.log = function (msg) {
+  console.log("[" + this.id + "]", msg);
+  this.messages.push(msg);
+  if (this.messages.length > MAX_DEBUG) {
+    this.dbg.innerText = this.messages.slice(this.messages.length - MAX_DEBUG).join("\n");
+  } else {
+    this.dbg.innerText = this.messages.join("\n");
+  }
+}
+
+WS.prototype.send = function (data) {
+  this.sock.send(data);
+}
+
+WS.prototype.ping = function () {
+  if (this.sock.readyState == WebSocket.OPEN) {
+    this.ping_count += 1;
+    this.sock.send("(" + this.id + ") ping " + this.ping_count);
+  }
+}
+
+var clients = [];
+
+function do_pings() {
+  // staggered, random pings
+  for (var i=0; i < CLIENT_COUNT; i++) {
+    if (Math.random() * 10 < 1) {
+      clients[i].ping();
+    }
+  }
+}
+
+var intv;
+function start() { console.log('starting'); intv = setInterval(do_pings, 50); }
+function stop() {  console.log('stopping'); clearInterval(intv); }
+
+for (var i=0; i < CLIENT_COUNT; i++) {
+  clients.push(new WS(i));
+  clients[i].start();
+}
+
+</script>
+</body>
+</html>
